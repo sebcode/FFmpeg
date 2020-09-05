@@ -110,6 +110,8 @@ const int program_birth_year = 2003;
 
 static unsigned sws_flags = SWS_BICUBIC;
 
+int run_event_loop = 1;
+
 typedef struct MyAVPacketList {
     AVPacket pkt;
     struct MyAVPacketList *next;
@@ -1692,7 +1694,31 @@ display:
             video_display(is);
     }
     is->force_refresh = 0;
-    if (show_status) {
+
+    static int64_t last_time2;
+    int64_t cur_time2;
+    static int buf_vqsize = 1;
+    cur_time2 = av_gettime_relative();
+
+    buf_vqsize += is->videoq.size;
+
+    if (!last_time2 || (cur_time2 - last_time2) >= 30 * 1000000) {
+        av_log(NULL, AV_LOG_INFO, "XXXXXXXXXXXXXXXXXXXXXXX Check %d", buf_vqsize);
+
+        if (buf_vqsize == 0) {
+            av_log(NULL, AV_LOG_INFO, "OOOOOOOOH NOOOOOOOOO");
+            run_event_loop = 0;
+        } else {
+            av_log(NULL, AV_LOG_INFO, "OKKKKKKKKKKKKK");
+        }
+        
+        fflush(stderr);
+
+        last_time2 = cur_time2;
+        buf_vqsize = 0;
+    }
+
+    if (0 && show_status) {
         AVBPrint buf;
         static int64_t last_time;
         int64_t cur_time;
@@ -3231,7 +3257,7 @@ static void toggle_audio_display(VideoState *is)
 static void refresh_loop_wait_event(VideoState *is, SDL_Event *event) {
     double remaining_time = 0.0;
     SDL_PumpEvents();
-    while (!SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT)) {
+    while (run_event_loop && !SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_FIRSTEVENT, SDL_LASTEVENT)) {
         if (!cursor_hidden && av_gettime_relative() - cursor_last_shown > CURSOR_HIDE_DELAY) {
             SDL_ShowCursor(0);
             cursor_hidden = 1;
@@ -3278,7 +3304,7 @@ static void event_loop(VideoState *cur_stream)
     SDL_Event event;
     double incr, pos, frac;
 
-    for (;;) {
+    while (run_event_loop) {
         double x;
         refresh_loop_wait_event(cur_stream, &event);
         switch (event.type) {
@@ -3768,13 +3794,18 @@ int main(int argc, char **argv)
         }
     }
 
-    is = stream_open(input_filename, file_iformat);
-    if (!is) {
-        av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
-        do_exit(NULL);
-    }
+    for (;;) {
+        av_log(NULL, AV_LOG_INFO, "START STREAM");
 
-    event_loop(is);
+        run_event_loop = 1;
+        is = stream_open(input_filename, file_iformat);
+        if (!is) {
+            av_log(NULL, AV_LOG_FATAL, "Failed to initialize VideoState!\n");
+            do_exit(NULL);
+        }
+
+        event_loop(is);
+    }
 
     /* never returns */
 
